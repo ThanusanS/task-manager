@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 
@@ -12,8 +12,30 @@ export default function SignupPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleSignup(e: React.FormEvent) {
+  // Redirect logged-in users to dashboard
+  useEffect(() => {
+    let active = true;
+
+    async function checkUser() {
+      const { data, error } = await supabase.auth.getSession();
+
+      if (!active) return;
+
+      if (!error && data.session) {
+        router.replace("/");
+      }
+    }
+
+    checkUser();
+
+    return () => {
+      active = false;
+    };
+  }, [router]);
+
+  async function handleSignup(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+
     setLoading(true);
     setMessage("");
 
@@ -39,11 +61,13 @@ export default function SignupPage() {
         className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg"
       >
         <h1 className="mb-2 text-3xl font-bold">Create Account</h1>
+
         <p className="mb-6 text-gray-500">
           Sign up for your Task Manager account.
         </p>
 
         <label className="mb-2 block">Email</label>
+
         <input
           type="email"
           required
@@ -54,6 +78,7 @@ export default function SignupPage() {
         />
 
         <label className="mb-2 block">Password</label>
+
         <input
           type="password"
           required
