@@ -64,7 +64,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // Fetch all dashboard statistics
+    // Fetch dashboard statistics
     const [usersResult, tasksResult, completedResult, pendingResult] =
       await Promise.all([
         supabase.auth.admin.listUsers({
@@ -85,31 +85,28 @@ export async function GET(request: Request) {
           .eq("completed", false),
       ]);
 
-    // Detailed debugging
+    // Safely read total users
+    const totalUsers =
+      "total" in usersResult.data ? (usersResult.data.total ?? 0) : 0;
+
     console.log("Users result:", {
       error: usersResult.error,
-      total: usersResult.data?.total,
+      total: totalUsers,
     });
 
     console.log("Tasks result:", {
       error: tasksResult.error,
       count: tasksResult.count,
-      status: tasksResult.status,
-      statusText: tasksResult.statusText,
     });
 
     console.log("Completed result:", {
       error: completedResult.error,
       count: completedResult.count,
-      status: completedResult.status,
-      statusText: completedResult.statusText,
     });
 
     console.log("Pending result:", {
       error: pendingResult.error,
       count: pendingResult.count,
-      status: pendingResult.status,
-      statusText: pendingResult.statusText,
     });
 
     if (
@@ -119,14 +116,14 @@ export async function GET(request: Request) {
       pendingResult.error
     ) {
       return NextResponse.json(
-        { error: "Statistics query failed. Check VS Code terminal." },
+        { error: "Statistics query failed. Check server logs." },
         { status: 500 },
       );
     }
 
     // Return dashboard statistics
     return NextResponse.json({
-      totalUsers: usersResult.data.total,
+      totalUsers,
       totalTasks: tasksResult.count ?? 0,
       completedTasks: completedResult.count ?? 0,
       pendingTasks: pendingResult.count ?? 0,
