@@ -22,7 +22,7 @@ export default function SignupPage() {
       if (!active) return;
 
       if (!error && data.session) {
-        router.replace("/");
+        router.replace("/dashboard");
       }
     }
 

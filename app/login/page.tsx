@@ -22,7 +22,7 @@ export default function LoginPage() {
       if (!active) return;
 
       if (!error && data.session) {
-        router.replace("/");
+        router.replace("/dashboard");
       }
     }
 
@@ -51,7 +51,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.replace("/");
+    router.replace("/dashboard");
     router.refresh();
   }
 

@@ -24,8 +24,12 @@ export default function ProfilePage() {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
+    let active = true;
+
     async function loadProfile() {
       const { data, error } = await supabase.auth.getUser();
+
+      if (!active) return;
 
       if (error || !data.user) {
         router.replace("/login");
@@ -42,6 +46,10 @@ export default function ProfilePage() {
     }
 
     loadProfile();
+
+    return () => {
+      active = false;
+    };
   }, [router]);
 
   async function handleChangePassword(e: React.FormEvent<HTMLFormElement>) {
@@ -110,7 +118,7 @@ export default function ProfilePage() {
 
       await supabase.auth.signOut({ scope: "local" });
 
-      router.replace("/signup");
+      router.replace("/");
       router.refresh();
     } catch (err) {
       setError(
@@ -132,7 +140,7 @@ export default function ProfilePage() {
     <main className="min-h-screen bg-slate-50 p-6">
       <div className="mx-auto max-w-2xl">
         <button
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/dashboard")}
           className="mb-6 text-sm font-semibold text-blue-600 hover:text-blue-700"
         >
           ← Back to Dashboard
