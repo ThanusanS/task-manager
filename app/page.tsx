@@ -29,7 +29,7 @@ export default function Home() {
     const { data, error } = await supabase.auth.getSession();
 
     if (error || !data.session) {
-      router.replace("/login");
+      router.replace("/signup");
       throw new Error("Please log in to continue.");
     }
 
@@ -49,7 +49,7 @@ export default function Home() {
       return;
     }
 
-    router.replace("/login");
+    router.replace("/signup");
     router.refresh();
   }
 
@@ -65,7 +65,9 @@ export default function Home() {
 
       const data = await response.json();
 
-      if (!response.ok) throw new Error(data.error);
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load tasks");
+      }
 
       setTasks(data);
     } catch (err) {
@@ -75,24 +77,30 @@ export default function Home() {
     }
   }
 
-  // Check authentication and get user profile
+  // Check authentication before showing dashboard
   useEffect(() => {
     let active = true;
 
     async function checkAuth() {
-      const { data, error } = await supabase.auth.getUser();
+      try {
+        const { data, error } = await supabase.auth.getUser();
 
-      if (!active) return;
+        if (!active) return;
 
-      if (error || !data.user) {
-        router.replace("/login");
-        setLoading(false);
-        return;
+        if (error || !data.user) {
+          router.replace("/signup");
+          return;
+        }
+
+        setUserEmail(data.user.email ?? "");
+
+        await fetchTasks();
+      } catch {
+        if (active) {
+          setLoading(false);
+          router.replace("/signup");
+        }
       }
-
-      setUserEmail(data.user.email ?? "");
-
-      await fetchTasks();
     }
 
     checkAuth();
@@ -121,7 +129,9 @@ export default function Home() {
 
       const data = await response.json();
 
-      if (!response.ok) throw new Error(data.error);
+      if (!response.ok) {
+        throw new Error(data.error || "Could not add task");
+      }
 
       setTasks((prev) => [data, ...prev]);
       setTitle("");
@@ -149,7 +159,9 @@ export default function Home() {
 
       const data = await response.json();
 
-      if (!response.ok) throw new Error(data.error);
+      if (!response.ok) {
+        throw new Error(data.error || "Could not update task");
+      }
 
       setTasks((prev) =>
         prev.map((item) => (item.id === task.id ? data : item)),
@@ -173,7 +185,9 @@ export default function Home() {
 
       const data = await response.json();
 
-      if (!response.ok) throw new Error(data.error);
+      if (!response.ok) {
+        throw new Error(data.error || "Could not delete task");
+      }
 
       setTasks((prev) => prev.filter((task) => task.id !== id));
     } catch (err) {
@@ -199,6 +213,21 @@ export default function Home() {
 
     return matchesSearch && matchesFilter;
   });
+
+  // IMPORTANT: Do not render dashboard before authentication finishes
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f8fafc]">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600"></div>
+
+          <p className="text-sm font-medium text-slate-500">
+            Checking your account...
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#f8fafc] text-slate-900">
@@ -365,11 +394,7 @@ export default function Home() {
 
           <div className="border-t border-slate-100" />
 
-          {loading ? (
-            <p className="py-12 text-center text-sm text-slate-500">
-              Loading your tasks...
-            </p>
-          ) : filteredTasks.length === 0 ? (
+          {filteredTasks.length === 0 ? (
             <div className="py-12 text-center">
               <div className="mb-3 text-4xl">📝</div>
 
