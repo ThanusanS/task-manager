@@ -16,6 +16,7 @@ type AdminUser = {
   email: string;
   createdAt: string;
   lastSignInAt: string | null;
+  bannedUntil: string | null;
 };
 
 export default function AdminDashboardPage() {
@@ -27,89 +28,172 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [email, setEmail] = useState("");
+  const [currentAdminId, setCurrentAdminId] = useState("");
+  const [deletingUserId, setDeletingUserId] = useState("");
+  const [message, setMessage] = useState("");
+
+  async function loadDashboard() {
+    try {
+      setError("");
+
+      const { data, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !data.session) {
+        router.replace("/admin/login");
+        return;
+      }
+
+      setEmail(data.session.user.email || "");
+      setCurrentAdminId(data.session.user.id);
+
+      const headers = {
+        Authorization: `Bearer ${data.session.access_token}`,
+      };
+
+      const [statsResponse, usersResponse] = await Promise.all([
+        fetch("/api/admin/stats", { headers, cache: "no-store" }),
+        fetch("/api/admin/users", { headers, cache: "no-store" }),
+      ]);
+
+      if (
+        statsResponse.status === 401 ||
+        statsResponse.status === 403 ||
+        usersResponse.status === 401 ||
+        usersResponse.status === 403
+      ) {
+        await supabase.auth.signOut({ scope: "local" });
+        router.replace("/admin/login");
+        return;
+      }
+
+      if (!statsResponse.ok) {
+        throw new Error("Unable to load dashboard statistics.");
+      }
+
+      if (!usersResponse.ok) {
+        throw new Error("Unable to load registered users.");
+      }
+
+      const statsResult: Stats = await statsResponse.json();
+      const usersResult: { users: AdminUser[] } = await usersResponse.json();
+
+      setStats(statsResult);
+      setUsers(usersResult.users);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    let active = true;
-
-    async function loadDashboard() {
-      try {
-        const { data, error: sessionError } = await supabase.auth.getSession();
-
-        if (sessionError || !data.session) {
-          router.replace("/admin/login");
-          return;
-        }
-
-        if (!active) return;
-
-        setEmail(data.session.user.email || "");
-
-        const headers = {
-          Authorization: `Bearer ${data.session.access_token}`,
-        };
-
-        const [statsResponse, usersResponse] = await Promise.all([
-          fetch("/api/admin/stats", {
-            headers,
-            cache: "no-store",
-          }),
-          fetch("/api/admin/users", {
-            headers,
-            cache: "no-store",
-          }),
-        ]);
-
-        if (
-          statsResponse.status === 401 ||
-          statsResponse.status === 403 ||
-          usersResponse.status === 401 ||
-          usersResponse.status === 403
-        ) {
-          await supabase.auth.signOut({ scope: "local" });
-          router.replace("/admin/login");
-          return;
-        }
-
-        if (!statsResponse.ok) {
-          throw new Error("Unable to load dashboard statistics.");
-        }
-
-        if (!usersResponse.ok) {
-          throw new Error("Unable to load registered users.");
-        }
-
-        const statsResult: Stats = await statsResponse.json();
-
-        const usersResult: { users: AdminUser[] } = await usersResponse.json();
-
-        if (active) {
-          setStats(statsResult);
-          setUsers(usersResult.users);
-        }
-      } catch (err) {
-        if (active) {
-          setError(
-            err instanceof Error ? err.message : "Something went wrong.",
-          );
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    }
-
     loadDashboard();
-
-    return () => {
-      active = false;
-    };
-  }, [router]);
+  }, []);
 
   async function handleLogout() {
     await supabase.auth.signOut({ scope: "local" });
     router.replace("/admin/login");
     router.refresh();
+  }
+
+  async function handleDeleteUser(user: AdminUser) {
+    const confirmed = window.confirm(
+      `Are you sure you want to permanently delete ${user.email}?\n\nTheir account and tasks will be deleted. This cannot be undone.`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeletingUserId(user.id);
+      setMessage("");
+      setError("");
+
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+
+      if (!token) {
+        router.replace("/admin/login");
+        return;
+      }
+
+      const response = await fetch("/api/admin/users", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ userId: user.id }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Unable to delete user.");
+      }
+
+      setMessage(`${user.email} was deleted successfully.`);
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete user.");
+    } finally {
+      setDeletingUserId("");
+    }
+  }
+
+  async function handleStatusChange(
+    user: AdminUser,
+    action: "activate" | "deactivate",
+  ) {
+    const confirmed = window.confirm(
+      `Are you sure you want to ${action} ${user.email}?`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeletingUserId(user.id);
+      setMessage("");
+      setError("");
+
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+
+      if (!token) {
+        router.replace("/admin/login");
+        return;
+      }
+
+      const response = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          action,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Unable to update user status.");
+      }
+
+      setMessage(result.message);
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setDeletingUserId("");
+    }
+  }
+
+  function isUserInactive(user: AdminUser) {
+    return (
+      !!user.bannedUntil && new Date(user.bannedUntil).getTime() > Date.now()
+    );
   }
 
   const filteredUsers = users.filter((user) =>
@@ -151,7 +235,6 @@ export default function AdminDashboardPage() {
             <h1 className="text-xl font-bold text-slate-900">
               Task Manager Admin
             </h1>
-
             <p className="mt-1 text-sm text-slate-500">
               Administration Dashboard
             </p>
@@ -171,20 +254,18 @@ export default function AdminDashboardPage() {
           <h2 className="text-2xl font-bold text-slate-900">
             Dashboard Overview
           </h2>
-
           <p className="mt-2 text-sm text-slate-500">
             Welcome, {email || "Admin"}
           </p>
         </div>
 
         {loading ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-500">
+          <div className="rounded-xl border bg-white p-10 text-center text-slate-500">
             Loading dashboard...
           </div>
-        ) : error ? (
+        ) : error && !stats ? (
           <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-red-600">
             {error}
-
             <button
               onClick={() => window.location.reload()}
               className="ml-3 font-semibold underline"
@@ -194,7 +275,6 @@ export default function AdminDashboardPage() {
           </div>
         ) : (
           <>
-            {/* Dashboard Statistics */}
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
               {cards.map((card) => (
                 <div
@@ -205,7 +285,6 @@ export default function AdminDashboardPage() {
                     <p className="text-sm font-medium text-slate-500">
                       {card.title}
                     </p>
-
                     <span className="text-2xl">{card.icon}</span>
                   </div>
 
@@ -220,7 +299,6 @@ export default function AdminDashboardPage() {
               ))}
             </div>
 
-            {/* Registered Users */}
             <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h3 className="text-lg font-bold text-slate-900">
                 Registered Users
@@ -230,7 +308,18 @@ export default function AdminDashboardPage() {
                 All registered accounts (up to 100).
               </p>
 
-              {/* Search Users */}
+              {message && (
+                <p className="mt-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">
+                  {message}
+                </p>
+              )}
+
+              {error && (
+                <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">
+                  {error}
+                </p>
+              )}
+
               <div className="mt-5">
                 <input
                   type="text"
@@ -241,54 +330,104 @@ export default function AdminDashboardPage() {
                 />
               </div>
 
-              {/* Users Table */}
               <div className="mt-5 overflow-x-auto">
-                <table className="w-full min-w-[600px] text-left text-sm">
+                <table className="w-full min-w-[900px] text-left text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 text-slate-500">
                       <th className="px-4 py-3 font-semibold">Email</th>
-
                       <th className="px-4 py-3 font-semibold">
                         Account Created
                       </th>
-
                       <th className="px-4 py-3 font-semibold">Last Sign In</th>
+                      <th className="px-4 py-3 font-semibold">Status</th>
+                      <th className="px-4 py-3 font-semibold">Action</th>
                     </tr>
                   </thead>
 
                   <tbody>
-                    {filteredUsers.map((user) => (
-                      <tr
-                        key={user.id}
-                        className="border-b border-slate-100 last:border-0"
-                      >
-                        <td className="px-4 py-4 font-medium">
-                          <button
-                            onClick={() =>
-                              router.push(`/admin/users/${user.id}`)
-                            }
-                            className="text-blue-600 hover:text-blue-800 hover:underline"
-                          >
-                            {user.email}
-                          </button>
-                        </td>
+                    {filteredUsers.map((user) => {
+                      const inactive = isUserInactive(user);
+                      const isAdmin = user.id === currentAdminId;
 
-                        <td className="px-4 py-4 text-slate-600">
-                          {new Date(user.createdAt).toLocaleDateString()}
-                        </td>
+                      return (
+                        <tr
+                          key={user.id}
+                          className="border-b border-slate-100 last:border-0"
+                        >
+                          <td className="px-4 py-4 font-medium">
+                            <button
+                              onClick={() =>
+                                router.push(`/admin/users/${user.id}`)
+                              }
+                              className="text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              {user.email}
+                            </button>
+                            {isAdmin && (
+                              <span className="ml-2 text-xs text-slate-400">
+                                (You)
+                              </span>
+                            )}
+                          </td>
 
-                        <td className="px-4 py-4 text-slate-600">
-                          {user.lastSignInAt
-                            ? new Date(user.lastSignInAt).toLocaleDateString()
-                            : "Never"}
-                        </td>
-                      </tr>
-                    ))}
+                          <td className="px-4 py-4 text-slate-600">
+                            {new Date(user.createdAt).toLocaleDateString()}
+                          </td>
+
+                          <td className="px-4 py-4 text-slate-600">
+                            {user.lastSignInAt
+                              ? new Date(user.lastSignInAt).toLocaleDateString()
+                              : "Never"}
+                          </td>
+
+                          <td className="px-4 py-4">
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                inactive
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-green-100 text-green-700"
+                              }`}
+                            >
+                              {inactive ? "Inactive" : "Active"}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-4">
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() =>
+                                  handleStatusChange(
+                                    user,
+                                    inactive ? "activate" : "deactivate",
+                                  )
+                                }
+                                disabled={deletingUserId === user.id || isAdmin}
+                                className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {deletingUserId === user.id
+                                  ? "Please wait..."
+                                  : inactive
+                                    ? "Activate"
+                                    : "Deactivate"}
+                              </button>
+
+                              <button
+                                onClick={() => handleDeleteUser(user)}
+                                disabled={deletingUserId === user.id || isAdmin}
+                                className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
 
                     {filteredUsers.length === 0 && (
                       <tr>
                         <td
-                          colSpan={3}
+                          colSpan={5}
                           className="px-4 py-8 text-center text-slate-500"
                         >
                           {search
@@ -306,7 +445,6 @@ export default function AdminDashboardPage() {
               </p>
             </div>
 
-            {/* Admin Information */}
             <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h3 className="text-lg font-bold text-slate-900">
                 Admin Information
