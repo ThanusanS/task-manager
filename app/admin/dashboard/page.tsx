@@ -241,6 +241,7 @@ export default function AdminDashboardPage() {
                 />
               </div>
 
+              {/* Users Table */}
               <div className="mt-5 overflow-x-auto">
                 <table className="w-full min-w-[600px] text-left text-sm">
                   <thead>
@@ -261,8 +262,15 @@ export default function AdminDashboardPage() {
                         key={user.id}
                         className="border-b border-slate-100 last:border-0"
                       >
-                        <td className="px-4 py-4 font-medium text-slate-800">
-                          {user.email}
+                        <td className="px-4 py-4 font-medium">
+                          <button
+                            onClick={() =>
+                              router.push(`/admin/users/${user.id}`)
+                            }
+                            className="text-blue-600 hover:text-blue-800 hover:underline"
+                          >
+                            {user.email}
+                          </button>
                         </td>
 
                         <td className="px-4 py-4 text-slate-600">
