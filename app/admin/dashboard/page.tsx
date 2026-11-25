@@ -32,6 +32,7 @@ export default function AdminDashboardPage() {
   const [currentAdminId, setCurrentAdminId] = useState("");
   const [deletingUserId, setDeletingUserId] = useState("");
   const [message, setMessage] = useState("");
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   async function loadDashboard() {
     try {
@@ -101,6 +102,277 @@ export default function AdminDashboardPage() {
     await supabase.auth.signOut({ scope: "local" });
     router.replace("/admin/login");
     router.refresh();
+  }
+
+  // Generate professional PDF report
+  async function handleDownloadPDF() {
+    if (!stats) {
+      setError("Dashboard statistics are not available.");
+      return;
+    }
+
+    setDownloadingPdf(true);
+    setError("");
+
+    try {
+      const { jsPDF } = await import("jspdf");
+      const { default: autoTable } = await import("jspdf-autotable");
+
+      const doc = new jsPDF("p", "mm", "a4");
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      const navy = [15, 35, 75] as [number, number, number];
+      const blue = [37, 99, 235] as [number, number, number];
+      const lightBlue = [239, 246, 255] as [number, number, number];
+      const grey = [100, 116, 139] as [number, number, number];
+      const green = [22, 163, 74] as [number, number, number];
+      const red = [220, 38, 38] as [number, number, number];
+
+      const generatedAt = new Date();
+
+      const formatDate = (date: string | null) => {
+        if (!date) return "Never";
+
+        return new Date(date).toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        });
+      };
+
+      // Header background
+      doc.setFillColor(...navy);
+      doc.rect(0, 0, pageWidth, 48, "F");
+
+      // Brand
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(25);
+      doc.text("TaskFlow", 15, 20);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text("ADMINISTRATION REPORT", 15, 29);
+
+      doc.setFontSize(9);
+      doc.setTextColor(210, 225, 255);
+      doc.text(`Generated: ${generatedAt.toLocaleString("en-GB")}`, 15, 38);
+
+      // Report label
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text("CONFIDENTIAL", pageWidth - 15, 20, {
+        align: "right",
+      });
+
+      // Overview heading
+      doc.setTextColor(...navy);
+      doc.setFontSize(17);
+      doc.text("Dashboard Overview", 15, 62);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(...grey);
+      doc.text(`Administrator: ${email || "Admin"}`, 15, 69);
+
+      // Statistics cards
+      const cardY = 78;
+      const cardWidth = 42;
+      const cardHeight = 28;
+      const cardGap = 4;
+      const startX = 15;
+
+      const reportCards = [
+        {
+          title: "TOTAL USERS",
+          value: stats.totalUsers,
+          color: blue,
+        },
+        {
+          title: "TOTAL TASKS",
+          value: stats.totalTasks,
+          color: navy,
+        },
+        {
+          title: "COMPLETED",
+          value: stats.completedTasks,
+          color: green,
+        },
+        {
+          title: "PENDING",
+          value: stats.pendingTasks,
+          color: red,
+        },
+      ];
+
+      reportCards.forEach((card, index) => {
+        const x = startX + index * (cardWidth + cardGap);
+
+        doc.setFillColor(...lightBlue);
+        doc.roundedRect(x, cardY, cardWidth, cardHeight, 3, 3, "F");
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(...grey);
+        doc.text(card.title, x + 4, cardY + 8);
+
+        doc.setFontSize(19);
+        doc.setTextColor(...card.color);
+        doc.text(card.value.toLocaleString(), x + 4, cardY + 21);
+      });
+
+      // User table heading
+      doc.setTextColor(...navy);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(15);
+      doc.text("Registered Users", 15, 120);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(...grey);
+      doc.text(`Total records included: ${users.length}`, 15, 127);
+
+      const tableRows = users.map((user) => {
+        const inactive =
+          !!user.bannedUntil &&
+          new Date(user.bannedUntil).getTime() > Date.now();
+
+        return [
+          user.email,
+          formatDate(user.createdAt),
+          formatDate(user.lastSignInAt),
+          inactive ? "Inactive" : "Active",
+        ];
+      });
+
+      autoTable(doc, {
+        startY: 133,
+        head: [["Email Address", "Registered", "Last Sign In", "Status"]],
+        body: tableRows,
+        theme: "grid",
+        margin: {
+          left: 15,
+          right: 15,
+          bottom: 20,
+        },
+        styles: {
+          font: "helvetica",
+          fontSize: 8,
+          cellPadding: 3,
+          textColor: [51, 65, 85],
+          lineColor: [226, 232, 240],
+          lineWidth: 0.2,
+          overflow: "linebreak",
+        },
+        headStyles: {
+          fillColor: blue,
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+          fontSize: 8,
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 252],
+        },
+        columnStyles: {
+          0: { cellWidth: 75 },
+          1: { cellWidth: 35 },
+          2: { cellWidth: 35 },
+          3: { cellWidth: 30 },
+        },
+        didParseCell: (data) => {
+          if (data.section === "body" && data.column.index === 3) {
+            const status = String(data.cell.raw);
+
+            if (status === "Active") {
+              data.cell.styles.textColor = green;
+              data.cell.styles.fontStyle = "bold";
+            } else {
+              data.cell.styles.textColor = red;
+              data.cell.styles.fontStyle = "bold";
+            }
+          }
+        },
+      });
+
+      // Summary section after table
+      const finalY =
+        (
+          doc as typeof doc & {
+            lastAutoTable?: { finalY: number };
+          }
+        ).lastAutoTable?.finalY ?? 140;
+
+      let summaryY = finalY + 15;
+
+      if (summaryY > pageHeight - 45) {
+        doc.addPage();
+        summaryY = 25;
+      }
+
+      doc.setTextColor(...navy);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.text("Report Summary", 15, summaryY);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(...grey);
+
+      const summaryText = [
+        `Total registered users: ${stats.totalUsers}`,
+        `Total tasks created: ${stats.totalTasks}`,
+        `Completed tasks: ${stats.completedTasks}`,
+        `Pending tasks: ${stats.pendingTasks}`,
+      ];
+
+      summaryText.forEach((line, index) => {
+        doc.text(`• ${line}`, 17, summaryY + 8 + index * 6);
+      });
+
+      // Footer and page numbers
+      const pageCount = doc.internal.getNumberOfPages();
+
+      for (let page = 1; page <= pageCount; page++) {
+        doc.setPage(page);
+
+        doc.setDrawColor(226, 232, 240);
+        doc.line(15, pageHeight - 15, pageWidth - 15, pageHeight - 15);
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(...grey);
+
+        doc.text("TaskFlow | Administration Report", 15, pageHeight - 9);
+
+        doc.text(
+          `Page ${page} of ${pageCount}`,
+          pageWidth - 15,
+          pageHeight - 9,
+          { align: "right" },
+        );
+      }
+
+      const filename = `TaskFlow_Admin_Report_${generatedAt
+        .toISOString()
+        .slice(0, 10)}.pdf`;
+
+      doc.save(filename);
+
+      setMessage("Your PDF report has been downloaded successfully!");
+    } catch (err) {
+      console.error("PDF generation error:", err);
+
+      setError(
+        err instanceof Error
+          ? `PDF download failed: ${err.message}`
+          : "Could not generate PDF report.",
+      );
+    } finally {
+      setDownloadingPdf(false);
+    }
   }
 
   async function handleDeleteUser(user: AdminUser) {
@@ -242,6 +514,7 @@ export default function AdminDashboardPage() {
             <h1 className="text-xl font-bold text-slate-900">
               Task Manager Admin
             </h1>
+
             <p className="mt-1 text-sm text-slate-500">
               Administration Dashboard
             </p>
@@ -257,13 +530,34 @@ export default function AdminDashboardPage() {
       </header>
 
       <div className="mx-auto max-w-7xl px-5 py-10">
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-slate-900">
-            Dashboard Overview
-          </h2>
-          <p className="mt-2 text-sm text-slate-500">
-            Welcome, {email || "Admin"}
-          </p>
+        <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">
+              Dashboard Overview
+            </h2>
+
+            <p className="mt-2 text-sm text-slate-500">
+              Welcome, {email || "Admin"}
+            </p>
+          </div>
+
+          <button
+            onClick={handleDownloadPDF}
+            disabled={loading || !stats || downloadingPdf}
+            className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {downloadingPdf ? (
+              <>
+                <span className="animate-spin">⏳</span>
+                Generating PDF...
+              </>
+            ) : (
+              <>
+                <span>📄</span>
+                Download PDF Report
+              </>
+            )}
+          </button>
         </div>
 
         {loading ? (
@@ -273,6 +567,7 @@ export default function AdminDashboardPage() {
         ) : error && !stats ? (
           <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-red-600">
             {error}
+
             <button
               onClick={() => window.location.reload()}
               className="ml-3 font-semibold underline"
@@ -292,6 +587,7 @@ export default function AdminDashboardPage() {
                     <p className="text-sm font-medium text-slate-500">
                       {card.title}
                     </p>
+
                     <span className="text-2xl">{card.icon}</span>
                   </div>
 
