@@ -333,7 +333,7 @@ export default function AdminDashboardPage() {
       });
 
       // Footer and page numbers
-      const pageCount = doc.internal.getNumberOfPages();
+      const pageCount = doc.internal.pages.length - 1;
 
       for (let page = 1; page <= pageCount; page++) {
         doc.setPage(page);
