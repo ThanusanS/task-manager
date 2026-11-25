@@ -8,6 +8,7 @@ type UserProfile = {
   id: string;
   email?: string;
   created_at: string;
+  avatar_url?: string;
 };
 
 export default function ProfilePage() {
@@ -20,8 +21,10 @@ export default function ProfilePage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -40,6 +43,7 @@ export default function ProfilePage() {
         id: data.user.id,
         email: data.user.email,
         created_at: data.user.created_at,
+        avatar_url: data.user.user_metadata?.avatar_url || "",
       });
 
       setLoading(false);
@@ -51,6 +55,124 @@ export default function ProfilePage() {
       active = false;
     };
   }, [router]);
+
+  async function handleUploadPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+
+    if (!file || !user) return;
+
+    setMessage("");
+    setError("");
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+
+    if (!allowedTypes.includes(file.type)) {
+      setError("Please upload a JPG, PNG, or WEBP image.");
+      e.target.value = "";
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Image size must be less than 5 MB.");
+      e.target.value = "";
+      return;
+    }
+
+    setUploading(true);
+
+    try {
+      const filePath = `${user.id}/profile`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: true,
+          contentType: file.type,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(filePath);
+
+      const avatarUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: {
+          avatar_url: avatarUrl,
+        },
+      });
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      setUser((previous) =>
+        previous ? { ...previous, avatar_url: avatarUrl } : previous,
+      );
+
+      setMessage("Profile photo updated successfully!");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not upload profile photo.",
+      );
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handleRemovePhoto() {
+    if (!user) return;
+
+    const confirmed = window.confirm(
+      "Are you sure you want to remove your profile photo?",
+    );
+
+    if (!confirmed) return;
+
+    setUploading(true);
+    setMessage("");
+    setError("");
+
+    try {
+      const filePath = `${user.id}/profile`;
+
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: {
+          avatar_url: null,
+        },
+      });
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      const { error: removeError } = await supabase.storage
+        .from("avatars")
+        .remove([filePath]);
+
+      if (removeError) {
+        throw removeError;
+      }
+
+      setUser((previous) =>
+        previous ? { ...previous, avatar_url: "" } : previous,
+      );
+
+      setMessage("Profile photo removed successfully!");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not remove profile photo.",
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function handleChangePassword(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -148,17 +270,62 @@ export default function ProfilePage() {
 
         {/* Profile Information */}
         <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-          <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100 text-2xl font-bold text-blue-600">
-            {user?.email?.charAt(0).toUpperCase()}
+          <div className="mb-6 flex flex-col items-start gap-4">
+            {user?.avatar_url ? (
+              <img
+                src={user.avatar_url}
+                alt="Profile photo"
+                className="h-24 w-24 rounded-full border border-slate-200 object-cover"
+              />
+            ) : (
+              <div className="flex h-24 w-24 items-center justify-center rounded-full bg-blue-100 text-3xl font-bold text-blue-600">
+                {user?.email?.charAt(0).toUpperCase()}
+              </div>
+            )}
+
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">My Profile</h1>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Manage your account and profile photo.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <label className="cursor-pointer rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700">
+                {uploading
+                  ? "Uploading..."
+                  : user?.avatar_url
+                    ? "Change Photo"
+                    : "Upload Photo"}
+
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleUploadPhoto}
+                  disabled={uploading}
+                  className="hidden"
+                />
+              </label>
+
+              {user?.avatar_url && (
+                <button
+                  type="button"
+                  onClick={handleRemovePhoto}
+                  disabled={uploading}
+                  className="rounded-xl border border-red-200 px-5 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                >
+                  Remove Photo
+                </button>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-400">
+              JPG, PNG or WEBP. Maximum size: 5 MB.
+            </p>
           </div>
 
-          <h1 className="text-2xl font-bold text-slate-900">My Profile</h1>
-
-          <p className="mt-2 text-sm text-slate-500">
-            View your account information.
-          </p>
-
-          <div className="mt-8 space-y-5">
+          <div className="mt-8 space-y-5 border-t border-slate-100 pt-6">
             <div>
               <p className="text-sm font-medium text-slate-500">
                 Email Address

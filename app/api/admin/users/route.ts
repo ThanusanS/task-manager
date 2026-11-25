@@ -86,8 +86,11 @@ export async function GET(request: Request) {
       id: item.id,
       email: item.email ?? "No email",
       createdAt: item.created_at,
-      lastSignInAt: item.last_sign_in_at,
-      bannedUntil: item.banned_until,
+      lastSignInAt: item.last_sign_in_at ?? null,
+      bannedUntil: item.banned_until ?? null,
+
+      // Profile photo URL
+      avatarUrl: item.user_metadata?.avatar_url ?? null,
     }));
 
     return NextResponse.json({ users });

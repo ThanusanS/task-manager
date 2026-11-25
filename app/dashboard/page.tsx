@@ -24,6 +24,7 @@ export default function Home() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [userEmail, setUserEmail] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
 
   async function getAuthHeaders() {
     const { data, error } = await supabase.auth.getSession();
@@ -93,6 +94,7 @@ export default function Home() {
         }
 
         setUserEmail(data.user.email ?? "");
+        setAvatarUrl(data.user.user_metadata?.avatar_url ?? "");
 
         await fetchTasks();
       } catch {
@@ -233,28 +235,40 @@ export default function Home() {
     <main className="min-h-screen bg-[#f8fafc] text-slate-900">
       <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Header */}
-        <header className="mb-10 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-xl font-bold text-white shadow-sm">
+        <header className="mb-10 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-xl font-bold text-white shadow-sm">
               T
             </div>
 
-            <div>
+            <div className="min-w-0">
               <h1 className="text-xl font-bold tracking-tight">Task Manager</h1>
 
-              <p className="text-xs text-slate-500">
+              <p className="truncate text-xs text-slate-500">
                 {userEmail || "Your personal workspace"}
               </p>
             </div>
           </div>
 
           {/* Profile and Logout */}
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               onClick={() => router.push("/profile")}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
             >
-              Profile
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt="Profile"
+                  className="h-8 w-8 rounded-full border border-slate-200 object-cover"
+                />
+              ) : (
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 font-bold text-blue-600">
+                  {userEmail.charAt(0).toUpperCase() || "U"}
+                </span>
+              )}
+
+              <span>Profile</span>
             </button>
 
             <button

@@ -17,6 +17,7 @@ type AdminUser = {
   createdAt: string;
   lastSignInAt: string | null;
   bannedUntil: string | null;
+  avatarUrl: string | null;
 };
 
 export default function AdminDashboardPage() {
@@ -51,8 +52,14 @@ export default function AdminDashboardPage() {
       };
 
       const [statsResponse, usersResponse] = await Promise.all([
-        fetch("/api/admin/stats", { headers, cache: "no-store" }),
-        fetch("/api/admin/users", { headers, cache: "no-store" }),
+        fetch("/api/admin/stats", {
+          headers,
+          cache: "no-store",
+        }),
+        fetch("/api/admin/users", {
+          headers,
+          cache: "no-store",
+        }),
       ]);
 
       if (
@@ -331,10 +338,10 @@ export default function AdminDashboardPage() {
               </div>
 
               <div className="mt-5 overflow-x-auto">
-                <table className="w-full min-w-[900px] text-left text-sm">
+                <table className="w-full min-w-[1000px] text-left text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 text-slate-500">
-                      <th className="px-4 py-3 font-semibold">Email</th>
+                      <th className="px-4 py-3 font-semibold">User</th>
                       <th className="px-4 py-3 font-semibold">
                         Account Created
                       </th>
@@ -354,20 +361,54 @@ export default function AdminDashboardPage() {
                           key={user.id}
                           className="border-b border-slate-100 last:border-0"
                         >
-                          <td className="px-4 py-4 font-medium">
-                            <button
-                              onClick={() =>
-                                router.push(`/admin/users/${user.id}`)
-                              }
-                              className="text-blue-600 hover:text-blue-800 hover:underline"
-                            >
-                              {user.email}
-                            </button>
-                            {isAdmin && (
-                              <span className="ml-2 text-xs text-slate-400">
-                                (You)
-                              </span>
-                            )}
+                          <td className="px-4 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-blue-100 text-sm font-bold uppercase text-blue-600">
+                                {user.avatarUrl ? (
+                                  <img
+                                    src={user.avatarUrl}
+                                    alt={`${user.email} profile`}
+                                    className="h-full w-full object-cover"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = "none";
+
+                                      const fallback = e.currentTarget
+                                        .nextElementSibling as HTMLElement;
+
+                                      if (fallback) {
+                                        fallback.style.display = "flex";
+                                      }
+                                    }}
+                                  />
+                                ) : null}
+
+                                <span
+                                  className="h-full w-full items-center justify-center"
+                                  style={{
+                                    display: user.avatarUrl ? "none" : "flex",
+                                  }}
+                                >
+                                  {user.email.charAt(0).toUpperCase()}
+                                </span>
+                              </div>
+
+                              <div>
+                                <button
+                                  onClick={() =>
+                                    router.push(`/admin/users/${user.id}`)
+                                  }
+                                  className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                                >
+                                  {user.email}
+                                </button>
+
+                                {isAdmin && (
+                                  <span className="ml-2 text-xs text-slate-400">
+                                    (You)
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </td>
 
                           <td className="px-4 py-4 text-slate-600">
